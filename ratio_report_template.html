@@ -1,0 +1,402 @@
+<title>SPY Straddle + Daily Short Ratio Spread — Backtest</title>
+<style>
+  .viz-root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --s1: #2a78d6;  /* combined */
+    --s2: #1baf7a;  /* best ratio */
+    --s3: #eda100;  /* straddle */
+    --good: #006300;
+    --bad:  #e34948;
+    --critical-bg: #fbeceb;
+    --critical-border: #e34948;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #199e70; --s3: #c98500;
+      --good: #0ca30c; --bad: #e66767;
+      --critical-bg: #2a1615; --critical-border: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #199e70; --s3: #c98500;
+    --good: #0ca30c; --bad: #e66767;
+    --critical-bg: #2a1615; --critical-border: #e66767;
+  }
+  :root[data-theme="light"] .viz-root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #1baf7a; --s3: #eda100;
+    --good: #006300; --bad: #e34948;
+    --critical-bg: #fbeceb; --critical-border: #e34948;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .viz-root { min-height: 100vh; padding: 32px 16px; display: flex; justify-content: center; }
+  .col { width: 100%; max-width: 860px; display: flex; flex-direction: column; gap: 20px; }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+  .sub { font-size: 13px; color: var(--text-secondary); margin: 0 0 6px; }
+  .caveat { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; line-height: 1.5; }
+
+  .risk-box {
+    background: var(--critical-bg);
+    border: 1px solid var(--critical-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .risk-box .risk-title {
+    font-size: 13px; font-weight: 700; color: var(--bad);
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  }
+  .risk-box p { font-size: 13px; line-height: 1.6; margin: 0 0 8px; color: var(--text-primary); }
+  .risk-box p:last-child { margin-bottom: 0; }
+  .risk-stats { display: flex; gap: 24px; flex-wrap: wrap; margin: 10px 0; }
+  .risk-stats .rs-lbl { font-size: 11px; color: var(--text-muted); }
+  .risk-stats .rs-val { font-size: 20px; font-weight: 700; color: var(--bad); }
+
+  .tiles { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+  .tile { flex: 1 1 150px; }
+  .tile .lbl { font-size: 12px; color: var(--text-muted); }
+  .tile .val { font-size: 26px; font-weight: 600; margin-top: 2px; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 12px; font-size: 12px; color: var(--text-secondary); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .chart-wrap { position: relative; width: 100%; overflow-x: auto; }
+  svg { display: block; width: 100%; height: auto; }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .crosshair-line { stroke: var(--baseline); stroke-width: 1; opacity: 0; }
+  .crosshair-line.active { opacity: 1; }
+  .hoverdot { stroke: var(--surface-1); stroke-width: 2; opacity: 0; }
+  .hoverdot.active { opacity: 1; }
+
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; line-height: 1.5; color: var(--text-primary);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); opacity: 0; white-space: nowrap; z-index: 10;
+  }
+  .tooltip.active { opacity: 1; }
+  .tooltip .t-date { color: var(--text-secondary); font-weight: 600; margin-bottom: 4px; }
+  .tooltip .t-row { display: flex; align-items: center; gap: 8px; }
+  .tooltip .t-row .swatch { width: 10px; height: 3px; border-radius: 2px; }
+  .tooltip .t-row .t-v { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td {
+    text-align: right; padding: 6px 8px;
+    border-bottom: 1px solid var(--gridline);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-muted); font-weight: 500; }
+  td { color: var(--text-primary); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  tr.best td { font-weight: 600; }
+</style>
+
+<div class="viz-root"><div class="col">
+
+  <div class="card">
+    <h1>SPY: long 1-year straddle + daily short 2x-mid / 1x-far ratio spread</h1>
+    <p class="sub" id="periodSub"></p>
+    <div class="tiles" id="tiles"></div>
+  </div>
+
+  <div class="card risk-box">
+    <div class="risk-title">⚠ UNCAPPED RISK — read before using this structure</div>
+    <p>Unlike the earlier iron-butterfly version, this daily short has <strong>no purchased wing</strong>.
+    Loss accelerates from <strong>2×/point</strong> once SPY passes the mid strike to <strong>3×/point</strong>
+    once it passes the far strike — there is no ceiling on the loss beyond that.</p>
+    <div class="risk-stats" id="riskStats"></div>
+    <p id="riskNarrative"></p>
+  </div>
+
+  <div class="card">
+    <h2>Cumulative P&amp;L</h2>
+    <div class="legend">
+      <span class="key"><span class="swatch" style="background:var(--s1)"></span>Combined</span>
+      <span class="key"><span class="swatch" style="background:var(--s2)"></span>Best ratio spread only</span>
+      <span class="key"><span class="swatch" style="background:var(--s3)"></span>Straddle only</span>
+    </div>
+    <div class="chart-wrap">
+      <svg id="chart" viewBox="0 0 800 380" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="Cumulative profit and loss of combined strategy, best ratio spread alone, and straddle alone, including a sharp drawdown from the April 2025 tail event"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <p class="caveat">Watch for the sharp single-day drop around April 2025 — that's the tail event in the
+    risk box above, visible as a cliff in the combined and ratio-spread curves.</p>
+  </div>
+
+  <div class="card">
+    <h2>Ratio-spread parameter sweep — ranked by Sharpe</h2>
+    <p class="sub">mid% = OTM offset for the 2× leg (sold twice); far% = additional OTM offset beyond mid for the 1× leg (sold once). Applied symmetrically to calls and puts. Per 1 contract set per day.</p>
+    <div class="table-scroll"><table id="sweepTable">
+      <thead><tr><th>Combo</th><th>Total P&amp;L</th><th>Avg/day</th><th>Win rate</th><th>Sharpe</th><th>Max DD</th><th>Worst day</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>Strategy components</h2>
+    <div class="table-scroll"><table id="compTable">
+      <thead><tr><th>Leg</th><th>Total P&amp;L</th><th>Avg/day</th><th>Win rate</th><th>Sharpe</th><th>Max DD</th><th>Worst day</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>Combined portfolio by period</h2>
+    <div class="table-scroll" style="display:flex; gap:32px; flex-wrap:wrap;">
+      <table id="yearlyTable" style="flex:1 1 200px">
+        <thead><tr><th>Year</th><th>P&amp;L</th></tr></thead><tbody></tbody>
+      </table>
+      <table id="quarterlyTable" style="flex:2 1 300px">
+        <thead><tr><th>Quarter</th><th>P&amp;L</th></tr></thead><tbody></tbody>
+      </table>
+    </div>
+    <p class="caveat">Modeled with Black-Scholes on SPY/VIX9D history (no real option quotes): flat vol ignores
+    the smile — real ratio-spread credits and tail losses would differ. $0.65/leg fees (6 legs/day), per 1
+    contract set. Daily-expiry SPY options only exist since 2022, so this window is shown. Research only —
+    not trading advice; this structure can lose far more than the premium collected.</p>
+  </div>
+
+</div></div>
+
+<script>
+var DATA = /*DATA*/;
+
+(function () {
+  var fmt$ = function (v) {
+    var sign = v < 0 ? "−$" : "$";
+    return sign + Math.abs(Math.round(v)).toLocaleString();
+  };
+
+  var m = DATA.best_combo.match(/m(\d+)_f(\d+)/);
+  document.getElementById("periodSub").textContent =
+    "Backtest " + DATA.period.replace("->", "→") + " · best combo: mid ±" + m[1] +
+    "%, far +" + m[2] + "% beyond mid · modeled prices";
+
+  var comp = {};
+  DATA.components.forEach(function (r) { comp[r.leg] = r; });
+  var combined = comp["combined"];
+  var tiles = [
+    { lbl: "Total P&L (combined)", val: fmt$(combined.total) },
+    { lbl: "Avg per day", val: fmt$(combined.mean_day) },
+    { lbl: "Daily win rate", val: Math.round(combined.win_rate * 100) + "%" },
+    { lbl: "Max drawdown", val: fmt$(combined.max_drawdown) }
+  ];
+  var tilesEl = document.getElementById("tiles");
+  tiles.forEach(function (t) {
+    var d = document.createElement("div");
+    d.className = "tile";
+    d.innerHTML = '<div class="lbl">' + t.lbl + '</div><div class="val">' + t.val + "</div>";
+    tilesEl.appendChild(d);
+  });
+
+  // risk box
+  var tr = DATA.tail_risk;
+  var riskStats = document.getElementById("riskStats");
+  [
+    { lbl: "Worst single day (any combo, full history)", val: fmt$(tr.worst_day) },
+    { lbl: "Date", val: tr.worst_date },
+    { lbl: "vs. avg winning day", val: (tr.worst_day / combined.mean_day).toFixed(0) + "×" }
+  ].forEach(function (s) {
+    var d = document.createElement("div");
+    d.innerHTML = '<div class="rs-lbl">' + s.lbl + '</div><div class="rs-val">' + s.val + "</div>";
+    riskStats.appendChild(d);
+  });
+  document.getElementById("riskNarrative").textContent =
+    "On " + tr.worst_date + ", SPY gapped violently in a single session and blew through both the mid and " +
+    "far short call strikes at once. The long 1-year straddle did NOT offset this loss that day — it lost " +
+    "money too, because the underlying was still far from the LEAPS strike, so the deep-OTM long call's gain " +
+    "was smaller than the deep-ITM long put's loss. Combined single-day loss that day: worse than either leg alone.";
+
+  // ---- line chart ----
+  var svgNS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("chart");
+  var W = 800, H = 380;
+  var margin = { top: 16, right: 20, bottom: 30, left: 70 };
+  var plotW = W - margin.left - margin.right, plotH = H - margin.top - margin.bottom;
+
+  var series = [
+    { name: "Combined", vals: DATA.cum_curves.combined, cssVar: "--s1" },
+    { name: "Best ratio spread only", vals: DATA.cum_curves.best_ratio, cssVar: "--s2" },
+    { name: "Straddle only", vals: DATA.cum_curves.straddle, cssVar: "--s3" }
+  ];
+  var dates = DATA.cum_curves.dates;
+  var n = dates.length;
+  var all = [];
+  series.forEach(function (s) { all = all.concat(s.vals); });
+  var yMin = Math.min.apply(null, all), yMax = Math.max.apply(null, all);
+  var pad = (yMax - yMin) * 0.05;
+  yMin -= pad; yMax += pad;
+
+  function x(i) { return margin.left + (i / (n - 1)) * plotW; }
+  function y(v) { return margin.top + (1 - (v - yMin) / (yMax - yMin)) * plotH; }
+  function el(tag, attrs) {
+    var e = document.createElementNS(svgNS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  var step = 25000;
+  for (var t = Math.ceil(yMin / step) * step; t <= yMax; t += step) {
+    svg.appendChild(el("line", { class: "gridline", x1: margin.left, x2: W - margin.right, y1: y(t), y2: y(t) }));
+    var lbl = el("text", { class: "axis-label", x: margin.left - 8, y: y(t) + 4, "text-anchor": "end" });
+    lbl.textContent = (t < 0 ? "−$" : "$") + Math.abs(t / 1000) + (t !== 0 ? "K" : "");
+    svg.appendChild(lbl);
+  }
+  if (yMin < 0 && yMax > 0)
+    svg.appendChild(el("line", { class: "baseline", x1: margin.left, x2: W - margin.right, y1: y(0), y2: y(0) }));
+
+  var seen = {};
+  dates.forEach(function (d, i) {
+    var yr = d.slice(0, 4);
+    if (!seen[yr]) {
+      seen[yr] = true;
+      var lbl = el("text", { class: "axis-label", x: x(i), y: H - 8, "text-anchor": "middle" });
+      lbl.textContent = yr;
+      svg.appendChild(lbl);
+    }
+  });
+
+  series.forEach(function (s) {
+    var d = s.vals.map(function (v, i) { return (i === 0 ? "M " : "L ") + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join(" ");
+    var p = el("path", { class: "series", d: d });
+    p.style.stroke = "var(" + s.cssVar + ")";
+    svg.appendChild(p);
+  });
+
+  var crosshair = el("line", { class: "crosshair-line", x1: 0, x2: 0, y1: margin.top, y2: margin.top + plotH });
+  svg.appendChild(crosshair);
+  var dots = series.map(function (s) {
+    var c = el("circle", { class: "hoverdot", r: 4 });
+    c.style.fill = "var(" + s.cssVar + ")";
+    svg.appendChild(c);
+    return c;
+  });
+  var tooltip = document.getElementById("tooltip");
+
+  var overlay = el("rect", { x: margin.left, y: margin.top, width: plotW, height: plotH, fill: "transparent" });
+  overlay.style.pointerEvents = "all";
+  svg.appendChild(overlay);
+
+  function onMove(evt) {
+    var rect = svg.getBoundingClientRect();
+    var scale = rect.width / W;
+    var mx = (evt.clientX - rect.left) / scale;
+    var i = Math.round((mx - margin.left) / plotW * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+    crosshair.setAttribute("x1", x(i)); crosshair.setAttribute("x2", x(i));
+    crosshair.classList.add("active");
+    var rows = '<div class="t-date">' + dates[i] + "</div>";
+    series.forEach(function (s, j) {
+      dots[j].setAttribute("cx", x(i)); dots[j].setAttribute("cy", y(s.vals[i]));
+      dots[j].classList.add("active");
+      rows += '<div class="t-row"><span class="swatch" style="background:var(' + s.cssVar + ')"></span>' +
+        s.name + '<span class="t-v">' + fmt$(s.vals[i]) + "</span></div>";
+    });
+    tooltip.innerHTML = rows;
+    tooltip.classList.add("active");
+    var px = x(i) * scale, py = y(series[0].vals[i]) * scale;
+    tooltip.style.left = Math.min(px + 14, rect.width - 190) + "px";
+    tooltip.style.top = Math.max(py - 80, 0) + "px";
+  }
+  function onLeave() {
+    crosshair.classList.remove("active");
+    tooltip.classList.remove("active");
+    dots.forEach(function (d) { d.classList.remove("active"); });
+  }
+  overlay.addEventListener("mousemove", onMove);
+  overlay.addEventListener("mouseleave", onLeave);
+
+  var sweepBody = document.querySelector("#sweepTable tbody");
+  DATA.rank.forEach(function (r) {
+    var tr2 = document.createElement("tr");
+    if (r.combo === DATA.best_combo) tr2.className = "best";
+    var mm = r.combo.match(/m(\d+)_f(\d+)/);
+    var name = "mid ±" + mm[1] + "%, far +" + mm[2] + "%";
+    tr2.innerHTML =
+      "<td>" + name + (r.combo === DATA.best_combo ? " ★" : "") + "</td>" +
+      '<td class="' + (r.total >= 0 ? "pos" : "neg") + '">' + fmt$(r.total) + "</td>" +
+      "<td>" + fmt$(r.mean_day) + "</td>" +
+      "<td>" + Math.round(r.win_rate * 100) + "%</td>" +
+      "<td>" + r.sharpe.toFixed(2) + "</td>" +
+      "<td>" + fmt$(r.max_drawdown) + "</td>" +
+      "<td>" + fmt$(r.worst_day) + "</td>";
+    sweepBody.appendChild(tr2);
+  });
+
+  var compBody = document.querySelector("#compTable tbody");
+  DATA.components.forEach(function (r) {
+    var tr3 = document.createElement("tr");
+    tr3.innerHTML =
+      "<td>" + r.leg.replace("_", " ") + "</td>" +
+      '<td class="' + (r.total >= 0 ? "pos" : "neg") + '">' + fmt$(r.total) + "</td>" +
+      "<td>" + fmt$(r.mean_day) + "</td>" +
+      "<td>" + Math.round(r.win_rate * 100) + "%</td>" +
+      "<td>" + r.sharpe.toFixed(2) + "</td>" +
+      "<td>" + fmt$(r.max_drawdown) + "</td>" +
+      "<td>" + fmt$(r.worst_day) + "</td>";
+    compBody.appendChild(tr3);
+  });
+
+  var yb = document.querySelector("#yearlyTable tbody");
+  Object.keys(DATA.yearly).forEach(function (k) {
+    var v = DATA.yearly[k];
+    var tr4 = document.createElement("tr");
+    tr4.innerHTML = "<td>" + k + '</td><td class="' + (v >= 0 ? "pos" : "neg") + '">' + fmt$(v) + "</td>";
+    yb.appendChild(tr4);
+  });
+  var qb = document.querySelector("#quarterlyTable tbody");
+  Object.keys(DATA.quarterly).forEach(function (k) {
+    var v = DATA.quarterly[k];
+    var tr5 = document.createElement("tr");
+    tr5.innerHTML = "<td>" + k + '</td><td class="' + (v >= 0 ? "pos" : "neg") + '">' + fmt$(v) + "</td>";
+    qb.appendChild(tr5);
+  });
+})();
+</script>
