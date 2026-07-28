@@ -1,4 +1,9 @@
-"""Download SPY OHLC, ^VIX, and ^VIX9D daily history and cache to data/*.csv."""
+"""Download daily OHLC for any ticker and cache to data/<ticker>.csv.
+
+For SPY specifically, also fetches ^VIX/^VIX9D (real implied-vol indices) so the
+backtests can use them instead of the realized-vol fallback used for other tickers.
+"""
+import argparse
 import sys
 from pathlib import Path
 
@@ -9,8 +14,8 @@ DATA_DIR = Path(__file__).parent / "data"
 START = "2016-01-01"
 
 
-def fetch(symbol: str, name: str) -> pd.DataFrame:
-    df = yf.download(symbol, start=START, auto_adjust=False, progress=False)
+def fetch(symbol: str, name: str, start: str) -> pd.DataFrame:
+    df = yf.download(symbol, start=start, auto_adjust=False, progress=False)
     if df.empty:
         raise RuntimeError(f"no data returned for {symbol}")
     if isinstance(df.columns, pd.MultiIndex):
@@ -24,10 +29,17 @@ def fetch(symbol: str, name: str) -> pd.DataFrame:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ticker", default="SPY", help="Underlying ticker, e.g. SPY, AAPL, TSLA")
+    ap.add_argument("--start", default=START)
+    args = ap.parse_args()
+
     DATA_DIR.mkdir(exist_ok=True)
-    fetch("SPY", "spy")
-    fetch("^VIX", "vix")
-    fetch("^VIX9D", "vix9d")
+    ticker = args.ticker.upper()
+    fetch(ticker, ticker.lower(), args.start)
+    if ticker == "SPY":
+        fetch("^VIX", "vix", args.start)
+        fetch("^VIX9D", "vix9d", args.start)
 
 
 if __name__ == "__main__":

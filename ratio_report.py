@@ -1,7 +1,7 @@
 """Aggregate the ratio-spread backtest, rank combos, and headline the tail risk
 versus the defined-risk iron fly from backtest.py.
 
-Usage: ratio_report.py [--since 2022-01-01] [--json results/ratio_report.json]
+Usage: ratio_report.py [--ticker SPY] [--since 2022-01-01] [--json results/ratio_report.json]
 """
 import argparse
 import json
@@ -32,11 +32,13 @@ def metrics(pnl: pd.Series) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--ticker", default="SPY")
     ap.add_argument("--since", default="2022-01-01")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
+    ticker = args.ticker.upper()
 
-    df = pd.read_csv(RESULTS / "ratio_daily_pnl.csv", index_col=0, parse_dates=True)
+    df = pd.read_csv(RESULTS / f"{ticker.lower()}_ratio_daily_pnl.csv", index_col=0, parse_dates=True)
     df_full = df.copy()
     if args.since:
         df = df.loc[args.since:]
@@ -48,7 +50,7 @@ def main():
         pd.DataFrame({c: metrics(df[c]) for c in ratio_cols})
         .T.sort_values("sharpe", ascending=False)
     )
-    print(f"\n=== Ratio-spread sweep ({label}), per 1 contract set, $ ===")
+    print(f"\n=== {ticker} ratio-spread sweep ({label}), per 1 contract set, $ ===")
     print("(mid% = OTM offset for the 2x leg, far% = additional OTM offset for the 1x leg)")
     print(rank.to_string())
 
@@ -67,7 +69,8 @@ def main():
     worst_full = df_full[ratio_cols].min().min()
     worst_full_combo = df_full[ratio_cols].min().idxmin()
     worst_full_date = df_full[ratio_cols].idxmin()[worst_full_combo]
-    print(f"\n=== TAIL RISK (full history 2016-present, all combos) ===")
+    full_label = f"{df_full.index[0].date()}-present"
+    print(f"\n=== TAIL RISK (full history {full_label}, all combos) ===")
     print(f"Worst single day: ${worst_full:,.0f} on {worst_full_date.date()} ({worst_full_combo})")
     print("This structure has NO purchased wing -- loss accelerates to 2x/pt past the mid strike")
     print("and 3x/pt past the far strike. The long LEAPS straddle only partially offsets this")
@@ -84,6 +87,7 @@ def main():
 
     if args.json:
         payload = {
+            "ticker": ticker,
             "period": label,
             "best_combo": best,
             "rank": rank.reset_index().rename(columns={"index": "combo"}).to_dict("records"),
